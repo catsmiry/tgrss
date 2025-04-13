@@ -175,6 +175,113 @@ function updateFeedInfo(feedId, lastCheck, lastItemGuid) {
   });
 }
 
+// コマンドの処理関数
+async function processCommand(msg) {
+  const chatId = msg.chat.id;
+  const userId = msg.from?.id;
+  const text = msg.text || "";
+
+  console.log(
+    `コマンド処理開始: ${text} (ChatID: ${msg.chat.id}, UserID: ${msg.from?.id})`
+  );
+
+  if (!userId) {
+    console.log("ユーザーIDがないメッセージを無視します");
+    return;
+  }
+
+  // 管理者権限チェック
+  try {
+    const adminStatus = await isAdmin(userId, chatId);
+    if (!adminStatus) {
+      return bot.sendMessage(
+        chatId,
+        "このコマンドはチャンネル管理者のみが実行できます。"
+      );
+    }
+
+    // addコマンド: RSSフィードを追加
+    if (text.match(/add\s+(\S+)\s+(\S+)/i)) {
+      const match = text.match(/add\s+(\S+)\s+(\S+)/i);
+      const title = match[1];
+      const rssUrl = match[2];
+
+      try {
+        // RSSフィードが有効か確認
+        await parser.parseURL(rssUrl);
+
+        // フィードを追加
+        await addRssFeed(chatId, title, rssUrl);
+        bot.sendMessage(chatId, `「${title}」のRSSフィードを追加しました。`);
+      } catch (error) {
+        bot.sendMessage(
+          chatId,
+          `エラー: RSSフィードの追加に失敗しました。URLが正しいか確認してください。`
+        );
+        console.error(`RSSフィード追加エラー:`, error);
+      }
+    }
+    // removeコマンド: RSSフィードを削除
+    else if (text.match(/remove\s+(\S+)/i)) {
+      const match = text.match(/remove\s+(\S+)/i);
+      const title = match[1];
+
+      try {
+        const deleted = await removeRssFeed(chatId, title);
+        if (deleted) {
+          bot.sendMessage(chatId, `「${title}」のRSSフィードを削除しました。`);
+        } else {
+          bot.sendMessage(
+            chatId,
+            `「${title}」というRSSフィードは登録されていません。`
+          );
+        }
+      } catch (error) {
+        bot.sendMessage(chatId, "エラー: RSSフィードの削除に失敗しました。");
+        console.error(`RSSフィード削除エラー:`, error);
+      }
+    }
+    // listコマンド: 登録されているRSSフィードの一覧を表示
+    else if (text.match(/list/i)) {
+      try {
+        const feeds = await getChannelFeeds(chatId);
+
+        if (feeds.length === 0) {
+          return bot.sendMessage(
+            chatId,
+            "このチャンネルには登録されているRSSフィードがありません。"
+          );
+        }
+
+        let message = "登録されているRSSフィード:\n";
+        feeds.forEach((feed) => {
+          message += `- ${feed.title}: ${feed.url}\n`;
+        });
+
+        bot.sendMessage(chatId, message);
+      } catch (error) {
+        bot.sendMessage(chatId, "エラー: フィード一覧の取得に失敗しました。");
+        console.error(`フィード一覧取得エラー:`, error);
+      }
+    } else {
+      // 不明なコマンド
+      bot.sendMessage(
+        chatId,
+        "認識できないコマンドです。使用可能なコマンド:\n" +
+          "/add タイトル URL - RSSフィードを追加\n" +
+          "/remove タイトル - RSSフィードを削除\n" +
+          "/list - 登録済みフィードの一覧"
+      );
+    }
+  } catch (error) {
+    console.error("コマンド処理中にエラーが発生しました:", error);
+    bot.sendMessage(
+      chatId,
+      "内部エラーが発生しました。しばらく経ってからもう一度お試しください。"
+    );
+  }
+}
+
 // データベースを初期化
 initializeDatabase();
 
@@ -194,122 +301,20 @@ bot
       console.log(
         `メッセージを受信: ${msg.text} (ChatID: ${msg.chat.id}, UserID: ${msg.from.id})`
       );
-    });
 
-    // コマンドハンドラー
-    bot.onText(/.*/, async (msg) => {
-      const chatId = msg.chat.id;
-      const userId = msg.from?.id;
+      // コマンドの処理
       const text = msg.text || "";
 
-      if (!userId) {
-        console.log("ユーザーIDがないメッセージを受信しました");
-        return;
-      }
-
-      // ボットへのメンションを確認
-      if (botInfo && text.includes(`@${botInfo.username}`)) {
-        console.log(`ボットへのメンション: ${text}`);
-
-        // 管理者権限チェック - 実行されたチャンネルの管理者かどうか確認
-        try {
-          const adminStatus = await isAdmin(userId, chatId);
-          if (!adminStatus) {
-            return bot.sendMessage(
-              chatId,
-              "このコマンドはチャンネル管理者のみが実行できます。"
-            );
-          }
-
-          // addコマンド: RSSフィードを追加
-          if (text.includes(" add ")) {
-            const parts = text.split(" add ")[1].trim().split(" ");
-            if (parts.length < 2) {
-              return bot.sendMessage(
-                chatId,
-                "使用方法: @ボット名 add タイトル名 RSSのURL"
-              );
-            }
-
-            const title = parts[0];
-            const rssUrl = parts[1];
-
-            try {
-              // RSSフィードが有効か確認
-              await parser.parseURL(rssUrl);
-
-              // フィードを追加
-              await addRssFeed(chatId, title, rssUrl);
-              bot.sendMessage(
-                chatId,
-                `「${title}」のRSSフィードを追加しました。`
-              );
-            } catch (error) {
-              bot.sendMessage(
-                chatId,
-                `エラー: RSSフィードの追加に失敗しました。URLが正しいか確認してください。`
-              );
-              console.error(error);
-            }
-          }
-          // removeコマンド: RSSフィードを削除
-          else if (text.includes(" remove ")) {
-            const title = text.split(" remove ")[1].trim();
-
-            try {
-              const deleted = await removeRssFeed(chatId, title);
-              if (deleted) {
-                bot.sendMessage(
-                  chatId,
-                  `「${title}」のRSSフィードを削除しました。`
-                );
-              } else {
-                bot.sendMessage(
-                  chatId,
-                  `「${title}」というRSSフィードは登録されていません。`
-                );
-              }
-            } catch (error) {
-              bot.sendMessage(
-                chatId,
-                "エラー: RSSフィードの削除に失敗しました。"
-              );
-              console.error(error);
-            }
-          }
-          // listコマンド: 登録されているRSSフィードの一覧を表示
-          else if (text.includes(" list")) {
-            try {
-              const feeds = await getChannelFeeds(chatId);
-
-              if (feeds.length === 0) {
-                return bot.sendMessage(
-                  chatId,
-                  "このチャンネルには登録されているRSSフィードがありません。"
-                );
-              }
-
-              let message = "登録されているRSSフィード:\n";
-              feeds.forEach((feed) => {
-                message += `- ${feed.title}: ${feed.url}\n`;
-              });
-
-              bot.sendMessage(chatId, message);
-            } catch (error) {
-              bot.sendMessage(
-                chatId,
-                "エラー: フィード一覧の取得に失敗しました。"
-              );
-              console.error(error);
-            }
-          }
-        } catch (error) {
-          console.error("コマンド処理中にエラーが発生しました:", error);
-          bot.sendMessage(
-            chatId,
-            "内部エラーが発生しました。しばらく経ってからもう一度お試しください。"
-          );
-        }
+      // 3つのパターンでコマンドを処理:
+      // 1. スラッシュで始まるコマンド (/add など)
+      // 2. @botusername へのメンション
+      // 3. @miryrssbot というハードコードされた名前へのメンション
+      if (
+        text.startsWith("/") ||
+        (botInfo && text.includes(`@${botInfo.username}`)) ||
+        text.includes("@miryrssbot")
+      ) {
+        processCommand(msg);
       }
     });
 
@@ -609,123 +614,20 @@ const server = app.listen(PORT, async () => {
       console.log(
         `メッセージを受信: ${msg.text} (ChatID: ${msg.chat.id}, UserID: ${msg.from?.id})`
       );
-    });
 
-    // コマンド処理
-    // コマンドハンドラー
-    bot.onText(/.*/, async (msg) => {
-      const chatId = msg.chat.id;
-      const userId = msg.from?.id;
+      // コマンドの処理
       const text = msg.text || "";
 
-      if (!userId) {
-        console.log("ユーザーIDがないメッセージを受信しました");
-        return;
-      }
-
-      // ボットへのメンションを確認
-      if (botInfo && text.includes(`@${botInfo.username}`)) {
-        console.log(`ボットへのメンション: ${text}`);
-
-        // 管理者権限チェック - 実行されたチャンネルの管理者かどうか確認
-        try {
-          const adminStatus = await isAdmin(userId, chatId);
-          if (!adminStatus) {
-            return bot.sendMessage(
-              chatId,
-              "このコマンドはチャンネル管理者のみが実行できます。"
-            );
-          }
-
-          // addコマンド: RSSフィードを追加
-          if (text.includes(" add ")) {
-            const parts = text.split(" add ")[1].trim().split(" ");
-            if (parts.length < 2) {
-              return bot.sendMessage(
-                chatId,
-                "使用方法: @ボット名 add タイトル名 RSSのURL"
-              );
-            }
-
-            const title = parts[0];
-            const rssUrl = parts[1];
-
-            try {
-              // RSSフィードが有効か確認
-              await parser.parseURL(rssUrl);
-
-              // フィードを追加
-              await addRssFeed(chatId, title, rssUrl);
-              bot.sendMessage(
-                chatId,
-                `「${title}」のRSSフィードを追加しました。`
-              );
-            } catch (error) {
-              bot.sendMessage(
-                chatId,
-                `エラー: RSSフィードの追加に失敗しました。URLが正しいか確認してください。`
-              );
-              console.error(error);
-            }
-          }
-          // removeコマンド: RSSフィードを削除
-          else if (text.includes(" remove ")) {
-            const title = text.split(" remove ")[1].trim();
-
-            try {
-              const deleted = await removeRssFeed(chatId, title);
-              if (deleted) {
-                bot.sendMessage(
-                  chatId,
-                  `「${title}」のRSSフィードを削除しました。`
-                );
-              } else {
-                bot.sendMessage(
-                  chatId,
-                  `「${title}」というRSSフィードは登録されていません。`
-                );
-              }
-            } catch (error) {
-              bot.sendMessage(
-                chatId,
-                "エラー: RSSフィードの削除に失敗しました。"
-              );
-              console.error(error);
-            }
-          }
-          // listコマンド: 登録されているRSSフィードの一覧を表示
-          else if (text.includes(" list")) {
-            try {
-              const feeds = await getChannelFeeds(chatId);
-
-              if (feeds.length === 0) {
-                return bot.sendMessage(
-                  chatId,
-                  "このチャンネルには登録されているRSSフィードがありません。"
-                );
-              }
-
-              let message = "登録されているRSSフィード:\n";
-              feeds.forEach((feed) => {
-                message += `- ${feed.title}: ${feed.url}\n`;
-              });
-
-              bot.sendMessage(chatId, message);
-            } catch (error) {
-              bot.sendMessage(
-                chatId,
-                "エラー: フィード一覧の取得に失敗しました。"
-              );
-              console.error(error);
-            }
-          }
-        } catch (error) {
-          console.error("コマンド処理中にエラーが発生しました:", error);
-          bot.sendMessage(
-            chatId,
-            "内部エラーが発生しました。しばらく経ってからもう一度お試しください。"
-          );
-        }
+      // 3つのパターンでコマンドを処理:
+      // 1. スラッシュで始まるコマンド (/add など)
+      // 2. @botusername へのメンション
+      // 3. @miryrssbot というハードコードされた名前へのメンション
+      if (
+        text.startsWith("/") ||
+        (botInfo && text.includes(`@${botInfo.username}`)) ||
+        text.includes("@miryrssbot")
+      ) {
+        processCommand(msg);
       }
     });
 
