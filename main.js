@@ -240,8 +240,12 @@ bot.on("message", async (msg) => {
   }
 });
 
+// ボット起動時間を記録
+const botStartTime = new Date();
+console.log(`ボット起動時間: ${botStartTime.toISOString()}`);
+
 // RSSフィードをチェックする関数
-async function checkRSSFeed(feed) {
+async function checkRSSFeed(feed, isInitialCheck = false) {
   try {
     const parsedFeed = await parser.parseURL(feed.url);
     const lastCheck = new Date(feed.last_check);
@@ -278,6 +282,14 @@ async function checkRSSFeed(feed) {
       newItems = newItemsWithGuids.filter((item) => {
         const pubDate = new Date(item.pubDate || item.isoDate);
         return pubDate > lastCheck;
+      });
+    }
+
+    // 初回チェック時はボット起動後の記事のみを通知
+    if (isInitialCheck) {
+      newItems = newItems.filter((item) => {
+        const pubDate = new Date(item.pubDate || item.isoDate);
+        return pubDate > botStartTime;
       });
     }
 
@@ -328,13 +340,13 @@ async function checkRSSFeed(feed) {
 }
 
 // すべてのフィードをチェック
-async function checkAllFeeds() {
+async function checkAllFeeds(isInitialCheck = false) {
   try {
     const feeds = await getAllFeeds();
     console.log(`${feeds.length}件のRSSフィードをチェックしています...`);
 
     for (const feed of feeds) {
-      await checkRSSFeed(feed);
+      await checkRSSFeed(feed, isInitialCheck);
       // API制限を避けるため少し間隔を空ける
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
@@ -344,10 +356,10 @@ async function checkAllFeeds() {
 }
 
 // より頻繁なRSSフィードのチェック（1分ごと）
-cron.schedule("* * * * *", checkAllFeeds);
+cron.schedule("* * * * *", () => checkAllFeeds(false));
 
-// サーバー起動時に一度チェック
-setTimeout(checkAllFeeds, 5000);
+// サーバー起動時に一度チェック（初回チェックフラグをtrueにして起動前の記事を通知しない）
+setTimeout(() => checkAllFeeds(true), 5000);
 
 // Expressサーバーの設定
 app.use(express.json());
