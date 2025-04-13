@@ -45,10 +45,20 @@ function initializeDatabase() {
     `);
 
     // 既存のテーブルに新しいカラムを追加（存在しない場合）
-    db.get("PRAGMA table_info(feeds)", (err, rows) => {
-      if (!err) {
-        // last_item_guidカラムがなければ追加
-        if (!rows.some((row) => row.name === "last_item_guid")) {
+    db.all("PRAGMA table_info(feeds)", (err, rows) => {
+      if (err) {
+        console.error("テーブル情報取得エラー:", err);
+        return;
+      }
+
+      // 行が返ってきた場合のみ処理（配列として扱う）
+      if (rows && Array.isArray(rows)) {
+        // last_item_guidカラムの存在チェック
+        const hasLastItemGuid = rows.some(
+          (row) => row.name === "last_item_guid"
+        );
+        if (!hasLastItemGuid) {
+          console.log("last_item_guidカラムを追加します");
           db.run("ALTER TABLE feeds ADD COLUMN last_item_guid TEXT");
         }
       }
