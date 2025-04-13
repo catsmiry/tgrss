@@ -609,28 +609,6 @@ const server = app.listen(PORT, async () => {
       }
     }
 
-    // すべてのメッセージを監視するハンドラー
-    bot.on("message", (msg) => {
-      console.log(
-        `メッセージを受信: ${msg.text} (ChatID: ${msg.chat.id}, UserID: ${msg.from?.id})`
-      );
-
-      // コマンドの処理
-      const text = msg.text || "";
-
-      // 3つのパターンでコマンドを処理:
-      // 1. スラッシュで始まるコマンド (/add など)
-      // 2. @botusername へのメンション
-      // 3. @miryrssbot というハードコードされた名前へのメンション
-      if (
-        text.startsWith("/") ||
-        (botInfo && text.includes(`@${botInfo.username}`)) ||
-        text.includes("@miryrssbot")
-      ) {
-        processCommand(msg);
-      }
-    });
-
     // サーバー起動時に一度チェック（初回チェックフラグをtrueにして起動前の記事を通知しない）
     setTimeout(() => checkAllFeeds(true), 5000);
   } catch (error) {
