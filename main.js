@@ -73,6 +73,7 @@ function initializeDatabase() {
         url TEXT NOT NULL,
         last_check TEXT,
         last_item_guid TEXT,
+        message_thread_id INTEGER,
         UNIQUE(chat_id, title)
       )
     `);
@@ -94,6 +95,15 @@ function initializeDatabase() {
           console.log("last_item_guidカラムを追加します");
           db.run("ALTER TABLE feeds ADD COLUMN last_item_guid TEXT");
         }
+
+        // message_thread_idカラムの存在チェック
+        const hasMessageThreadId = rows.some(
+          (row) => row.name === "message_thread_id"
+        );
+        if (!hasMessageThreadId) {
+          console.log("message_thread_idカラムを追加します");
+          db.run("ALTER TABLE feeds ADD COLUMN message_thread_id INTEGER");
+        }
       }
     });
 
@@ -102,7 +112,7 @@ function initializeDatabase() {
 }
 
 // RSSフィードの追加
-function addRssFeed(chatId, title, url) {
+function addRssFeed(chatId, title, url, messageThreadId = null) {
   return new Promise(async (resolve, reject) => {
     try {
       // RSSフィードを事前にパースして最新アイテムを取得
@@ -114,8 +124,8 @@ function addRssFeed(chatId, title, url) {
         : "";
 
       db.run(
-        "INSERT OR REPLACE INTO feeds (chat_id, title, url, last_check, last_item_guid) VALUES (?, ?, ?, ?, ?)",
-        [chatId, title, url, now, guid],
+        "INSERT OR REPLACE INTO feeds (chat_id, title, url, last_check, last_item_guid, message_thread_id) VALUES (?, ?, ?, ?, ?, ?)",
+        [chatId, title, url, now, guid, messageThreadId],
         function (err) {
           if (err) return reject(err);
           resolve(this.lastID);
@@ -180,9 +190,13 @@ async function processCommand(msg) {
   const chatId = msg.chat.id;
   const userId = msg.from?.id;
   const text = msg.text || "";
+  // スレッドIDを取得（存在する場合）
+  const messageThreadId = msg.message_thread_id;
 
   console.log(
-    `コマンド処理開始: ${text} (ChatID: ${chatId}, UserID: ${userId})`
+    `コマンド処理開始: ${text} (ChatID: ${chatId}, UserID: ${userId}, ThreadID: ${
+      messageThreadId || "なし"
+    })`
   );
 
   if (!userId) {
@@ -190,12 +204,19 @@ async function processCommand(msg) {
     return;
   }
 
-  // 応答関数 - 常に元のメッセージのチャンネルIDを使用する
+  // 応答関数 - スレッドIDが存在する場合は同じスレッドに応答
   const sendResponse = (message) => {
     console.log(
-      `応答送信: ChatID=${chatId}, Message=${message.substring(0, 50)}...`
+      `応答送信: ChatID=${chatId}, ThreadID=${
+        messageThreadId || "なし"
+      }, Message=${message.substring(0, 50)}...`
     );
-    return bot.sendMessage(chatId, message);
+
+    // スレッドIDが存在する場合はオプションに含める
+    const options = messageThreadId
+      ? { message_thread_id: messageThreadId }
+      : {};
+    return bot.sendMessage(chatId, message, options);
   };
 
   // 管理者権限チェック
@@ -215,8 +236,8 @@ async function processCommand(msg) {
         // RSSフィードが有効か確認
         await parser.parseURL(rssUrl);
 
-        // フィードを追加
-        await addRssFeed(chatId, title, rssUrl);
+        // フィードを追加（スレッドIDも保存）
+        await addRssFeed(chatId, title, rssUrl, messageThreadId);
         sendResponse(`「${title}」のRSSフィードを追加しました。`);
       } catch (error) {
         sendResponse(
@@ -300,7 +321,9 @@ bot
     // すべてのメッセージを監視するハンドラー
     bot.on("message", (msg) => {
       console.log(
-        `メッセージを受信: ${msg.text} (ChatID: ${msg.chat.id}, UserID: ${msg.from.id})`
+        `メッセージを受信: ${msg.text} (ChatID: ${msg.chat.id}, UserID: ${
+          msg.from.id
+        }, ThreadID: ${msg.message_thread_id || "なし"})`
       );
 
       // コマンドの処理
@@ -406,8 +429,13 @@ async function checkRSSFeed(feed, isInitialCheck = false) {
         message += `他 ${newItems.length - 5} 件の新着記事があります。`;
       }
 
+      // スレッドIDがフィードに保存されている場合はそれを使用
+      const options = feed.message_thread_id
+        ? { message_thread_id: feed.message_thread_id }
+        : {};
+
       // チャンネルに送信
-      await bot.sendMessage(feed.chat_id, message);
+      await bot.sendMessage(feed.chat_id, message, options);
 
       // 最新のアイテムのGUIDと時間を保存
       await updateFeedInfo(
