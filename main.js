@@ -219,6 +219,26 @@ async function processCommand(msg) {
     return bot.sendMessage(chatId, message, options);
   };
 
+  // コマンド文字列を正規化する（/command@botname 形式を処理）
+  let cleanedText = text;
+  if (text.startsWith("/")) {
+    // /command@botname 形式からコマンド部分を抽出
+    const commandParts = text.split(" ");
+    const firstPart = commandParts[0]; // /add@botname
+    let commandName = firstPart;
+
+    // @ が含まれていれば、それを取り除く
+    if (firstPart.includes("@")) {
+      commandName = firstPart.split("@")[0]; // /add
+    }
+
+    // 残りの引数を結合
+    const args = commandParts.slice(1).join(" ");
+    cleanedText = `${commandName.substring(1)} ${args}`.trim(); // "add arg1 arg2"
+  }
+
+  console.log(`正規化したコマンド: ${cleanedText}`);
+
   // 管理者権限チェック
   try {
     const adminStatus = await isAdmin(userId, chatId);
@@ -227,8 +247,8 @@ async function processCommand(msg) {
     }
 
     // addコマンド: RSSフィードを追加
-    if (text.match(/add\s+(\S+)\s+(\S+)/i)) {
-      const match = text.match(/add\s+(\S+)\s+(\S+)/i);
+    if (cleanedText.match(/^add\s+(\S+)\s+(\S+)/i)) {
+      const match = cleanedText.match(/^add\s+(\S+)\s+(\S+)/i);
       const title = match[1];
       const rssUrl = match[2];
 
@@ -247,8 +267,8 @@ async function processCommand(msg) {
       }
     }
     // removeコマンド: RSSフィードを削除
-    else if (text.match(/remove\s+(\S+)/i)) {
-      const match = text.match(/remove\s+(\S+)/i);
+    else if (cleanedText.match(/^remove\s+(\S+)/i)) {
+      const match = cleanedText.match(/^remove\s+(\S+)/i);
       const title = match[1];
 
       try {
@@ -264,7 +284,7 @@ async function processCommand(msg) {
       }
     }
     // listコマンド: 登録されているRSSフィードの一覧を表示
-    else if (text.match(/list/i)) {
+    else if (cleanedText.match(/^list/i)) {
       try {
         const feeds = await getChannelFeeds(chatId);
 
