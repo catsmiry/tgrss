@@ -20,6 +20,7 @@ const getExternalUrl = (path) => {
 
 // ボットとサービスの初期化
 const bot = new TelegramBot(token, { polling: true });
+let botInfo = null; // ボット情報を保存する変数
 const parser = new Parser();
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -145,6 +146,120 @@ function updateFeedInfo(feedId, lastCheck, lastItemGuid) {
 // データベースを初期化
 initializeDatabase();
 
+// ボット起動時間を記録
+const botStartTime = new Date();
+console.log(`ボット起動時間: ${botStartTime.toISOString()}`);
+
+// ボット情報を取得してからメッセージハンドラーを設定
+bot
+  .getMe()
+  .then((info) => {
+    botInfo = info;
+    console.log(`ボット名: @${botInfo.username} が起動しました`);
+
+    // コマンド処理
+    bot.on("message", async (msg) => {
+      const chatId = msg.chat.id;
+      const userId = msg.from.id;
+      const text = msg.text || "";
+
+      // ボットへのメンションを確認
+      if (!text.includes(`@${botInfo.username}`)) return;
+
+      // 管理者権限チェック - 実行されたチャンネルの管理者かどうか確認
+      const adminStatus = await isAdmin(userId, chatId);
+      if (!adminStatus) {
+        return bot.sendMessage(
+          chatId,
+          "このコマンドはチャンネル管理者のみが実行できます。"
+        );
+      }
+
+      // addコマンド: RSSフィードを追加
+      if (text.includes(" add ")) {
+        const parts = text.split(" add ")[1].trim().split(" ");
+        if (parts.length < 2) {
+          return bot.sendMessage(
+            chatId,
+            "使用方法: @ボット名 add タイトル名 RSSのURL"
+          );
+        }
+
+        const title = parts[0];
+        const rssUrl = parts[1];
+
+        try {
+          // RSSフィードが有効か確認
+          await parser.parseURL(rssUrl);
+
+          // フィードを追加
+          await addRssFeed(chatId, title, rssUrl);
+          bot.sendMessage(chatId, `「${title}」のRSSフィードを追加しました。`);
+        } catch (error) {
+          bot.sendMessage(
+            chatId,
+            `エラー: RSSフィードの追加に失敗しました。URLが正しいか確認してください。`
+          );
+          console.error(error);
+        }
+      }
+
+      // removeコマンド: RSSフィードを削除
+      else if (text.includes(" remove ")) {
+        const title = text.split(" remove ")[1].trim();
+
+        try {
+          const deleted = await removeRssFeed(chatId, title);
+          if (deleted) {
+            bot.sendMessage(
+              chatId,
+              `「${title}」のRSSフィードを削除しました。`
+            );
+          } else {
+            bot.sendMessage(
+              chatId,
+              `「${title}」というRSSフィードは登録されていません。`
+            );
+          }
+        } catch (error) {
+          bot.sendMessage(chatId, "エラー: RSSフィードの削除に失敗しました。");
+          console.error(error);
+        }
+      }
+
+      // listコマンド: 登録されているRSSフィードの一覧を表示
+      else if (text.includes(" list")) {
+        try {
+          const feeds = await getChannelFeeds(chatId);
+
+          if (feeds.length === 0) {
+            return bot.sendMessage(
+              chatId,
+              "このチャンネルには登録されているRSSフィードがありません。"
+            );
+          }
+
+          let message = "登録されているRSSフィード:\n";
+          feeds.forEach((feed) => {
+            message += `- ${feed.title}: ${feed.url}\n`;
+          });
+
+          bot.sendMessage(chatId, message);
+        } catch (error) {
+          bot.sendMessage(chatId, "エラー: フィード一覧の取得に失敗しました。");
+          console.error(error);
+        }
+      }
+    });
+
+    // サーバー起動時に一度チェック（初回チェックフラグをtrueにして起動前の記事を通知しない）
+    setTimeout(() => checkAllFeeds(true), 5000);
+  })
+  .catch((error) => {
+    console.error("ボット情報の取得に失敗しました:", error);
+    process.exit(1); // 致命的なエラーなので終了
+  });
+
 // 管理者チェック - チャンネルの管理者/モデレーターかどうかを確認
 async function isAdmin(userId, chatId) {
   try {
@@ -157,102 +272,6 @@ async function isAdmin(userId, chatId) {
     return false; // エラーが発生した場合は安全のためfalseを返す
   }
 }
-
-// コマンド処理
-bot.on("message", async (msg) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from.id;
-  const text = msg.text || "";
-
-  // ボットへのメンションを確認
-  if (!text.includes(`@${bot.botInfo.username}`)) return;
-
-  // 管理者権限チェック - 実行されたチャンネルの管理者かどうか確認
-  const adminStatus = await isAdmin(userId, chatId);
-  if (!adminStatus) {
-    return bot.sendMessage(
-      chatId,
-      "このコマンドはチャンネル管理者のみが実行できます。"
-    );
-  }
-
-  // addコマンド: RSSフィードを追加
-  if (text.includes(" add ")) {
-    const parts = text.split(" add ")[1].trim().split(" ");
-    if (parts.length < 2) {
-      return bot.sendMessage(
-        chatId,
-        "使用方法: @ボット名 add タイトル名 RSSのURL"
-      );
-    }
-
-    const title = parts[0];
-    const rssUrl = parts[1];
-
-    try {
-      // RSSフィードが有効か確認
-      await parser.parseURL(rssUrl);
-
-      // フィードを追加
-      await addRssFeed(chatId, title, rssUrl);
-      bot.sendMessage(chatId, `「${title}」のRSSフィードを追加しました。`);
-    } catch (error) {
-      bot.sendMessage(
-        chatId,
-        `エラー: RSSフィードの追加に失敗しました。URLが正しいか確認してください。`
-      );
-      console.error(error);
-    }
-  }
-
-  // removeコマンド: RSSフィードを削除
-  else if (text.includes(" remove ")) {
-    const title = text.split(" remove ")[1].trim();
-
-    try {
-      const deleted = await removeRssFeed(chatId, title);
-      if (deleted) {
-        bot.sendMessage(chatId, `「${title}」のRSSフィードを削除しました。`);
-      } else {
-        bot.sendMessage(
-          chatId,
-          `「${title}」というRSSフィードは登録されていません。`
-        );
-      }
-    } catch (error) {
-      bot.sendMessage(chatId, "エラー: RSSフィードの削除に失敗しました。");
-      console.error(error);
-    }
-  }
-
-  // listコマンド: 登録されているRSSフィードの一覧を表示
-  else if (text.includes(" list")) {
-    try {
-      const feeds = await getChannelFeeds(chatId);
-
-      if (feeds.length === 0) {
-        return bot.sendMessage(
-          chatId,
-          "このチャンネルには登録されているRSSフィードがありません。"
-        );
-      }
-
-      let message = "登録されているRSSフィード:\n";
-      feeds.forEach((feed) => {
-        message += `- ${feed.title}: ${feed.url}\n`;
-      });
-
-      bot.sendMessage(chatId, message);
-    } catch (error) {
-      bot.sendMessage(chatId, "エラー: フィード一覧の取得に失敗しました。");
-      console.error(error);
-    }
-  }
-});
-
-// ボット起動時間を記録
-const botStartTime = new Date();
-console.log(`ボット起動時間: ${botStartTime.toISOString()}`);
 
 // RSSフィードをチェックする関数
 async function checkRSSFeed(feed, isInitialCheck = false) {
@@ -367,9 +386,6 @@ async function checkAllFeeds(isInitialCheck = false) {
 
 // より頻繁なRSSフィードのチェック（1分ごと）
 cron.schedule("* * * * *", () => checkAllFeeds(false));
-
-// サーバー起動時に一度チェック（初回チェックフラグをtrueにして起動前の記事を通知しない）
-setTimeout(() => checkAllFeeds(true), 5000);
 
 // Expressサーバーの設定
 app.use(express.json());
