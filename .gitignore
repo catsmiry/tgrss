@@ -1,0 +1,45 @@
+# 依存関係
+node_modules/
+package-lock.json
+yarn.lock
+
+# 環境変数
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# データベースファイル
+*.db
+*.sqlite
+*.sqlite3
+rss_data.db
+
+# ログ
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 一時ファイル
+tmp/
+temp/
+.tmp/
+
+# OS固有のファイル
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# エディタ/IDE固有のファイル
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# デプロイメントファイル
+.vercel
+.netlify

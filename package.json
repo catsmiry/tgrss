@@ -1,0 +1,32 @@
+{
+  "name": "tgrss",
+  "version": "1.0.0",
+  "description": "Telegram RSS Reader Bot with domain support",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js",
+    "dev": "nodemon main.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^10.0.0",
+    "express": "^4.17.1",
+    "node-cron": "^3.0.0",
+    "node-telegram-bot-api": "^0.54.0",
+    "rss-parser": "^3.12.0",
+    "sqlite3": "^5.0.2"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.12"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/catsmiry/tgrss.git"
+  },
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/catsmiry/tgrss/issues"
+  },
+  "homepage": "https://github.com/catsmiry/tgrss#readme"
+}
