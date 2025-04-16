@@ -338,21 +338,66 @@ bot
     botInfo = info;
     console.log(`ボット名: @${botInfo.username} が起動しました`);
 
-    // すべてのメッセージを監視するハンドラー
-    bot.on("message", (msg) => {
-      console.log(
-        `メッセージを受信: ${msg.text || "テキストなし"} (ChatID: ${
-          msg.chat.id
-        }, UserID: ${msg.from?.id || "不明"}, ThreadID: ${
-          msg.message_thread_id || "なし"
-        }, ChatType: ${msg.chat.type || "不明"})`
-      );
+    // コマンド固有のハンドラーを登録
+    // /add コマンドのハンドラー - @botname 形式のみ受付
+    bot.onText(/^\/add@(\w+)(?: (.+))?$/, (msg, match) => {
+      // botの名前が一致する場合のみ処理
+      const botUsername = match[1];
+      if (botUsername === botInfo.username) {
+        console.log(`/addコマンドを受信: ${match[2] || "引数なし"}`);
+        processCommand(msg);
+      }
+    });
 
-      // テキストがあり、コマンドの場合のみ処理
-      const text = msg.text || "";
+    // /remove コマンドのハンドラー - @botname 形式のみ受付
+    bot.onText(/^\/remove@(\w+)(?: (.+))?$/, (msg, match) => {
+      // botの名前が一致する場合のみ処理
+      const botUsername = match[1];
+      if (botUsername === botInfo.username) {
+        console.log(`/removeコマンドを受信: ${match[2] || "引数なし"}`);
+        processCommand(msg);
+      }
+    });
 
-      // コマンド判定 - botInfoオブジェクトを渡す
-      if (text.startsWith("/") && isValidCommand(text, botInfo)) {
+    // /list コマンドのハンドラー - @botname 形式のみ受付
+    bot.onText(/^\/list@(\w+)$/, (msg, match) => {
+      // botの名前が一致する場合のみ処理
+      const botUsername = match[1];
+      if (botUsername === botInfo.username) {
+        console.log(`/listコマンドを受信`);
+        processCommand(msg);
+      }
+    });
+
+    // プライベートチャットでのコマンド処理（@なしでも可）
+    bot.onText(/^\/add\b(?: (.+))?$/, (msg, match) => {
+      // プライベートチャットの場合のみ処理
+      if (msg.chat.type === "private") {
+        console.log(
+          `プライベートチャットから/addコマンドを受信: ${
+            match[1] || "引数なし"
+          }`
+        );
+        processCommand(msg);
+      }
+    });
+
+    bot.onText(/^\/remove\b(?: (.+))?$/, (msg, match) => {
+      // プライベートチャットの場合のみ処理
+      if (msg.chat.type === "private") {
+        console.log(
+          `プライベートチャットから/removeコマンドを受信: ${
+            match[1] || "引数なし"
+          }`
+        );
+        processCommand(msg);
+      }
+    });
+
+    bot.onText(/^\/list\b$/, (msg) => {
+      // プライベートチャットの場合のみ処理
+      if (msg.chat.type === "private") {
+        console.log(`プライベートチャットから/listコマンドを受信`);
         processCommand(msg);
       }
     });
@@ -364,41 +409,6 @@ bot
     console.error("ボット情報の取得に失敗しました:", error);
     process.exit(1); // 致命的なエラーなので終了
   });
-
-// 有効なコマンドかどうかをチェックする関数
-function isValidCommand(text, botInfo) {
-  // テキストがない場合は無視
-  if (!text) return false;
-
-  // 1. コマンドの判定
-  if (text.startsWith("/")) {
-    // コマンド部分を取り出す (最初の空白までか全体)
-    const commandPart = text.split(" ")[0];
-
-    // 有効なコマンドリスト
-    const validCommands = ["/add", "/remove", "/list"];
-
-    // @を含まないコマンドの場合（プライベートチャットなど）
-    if (!commandPart.includes("@")) {
-      // グループチャットでは@付きコマンドを要求
-      if (msg.chat.type === "group" || msg.chat.type === "supergroup") {
-        return false;
-      }
-      return validCommands.includes(commandPart.toLowerCase());
-    }
-
-    // @を含む場合（グループチャットでの指定）
-    const [cmd, botName] = commandPart.split("@");
-    if (!validCommands.includes(cmd.toLowerCase())) {
-      return false;
-    }
-
-    // ボット名チェック - ユーザー名が完全に一致する場合のみコマンドを有効とする
-    return botInfo && botName === botInfo.username;
-  }
-
-  return false;
-}
 
 // 管理者チェック - チャンネルの管理者/モデレーターかどうかを確認
 async function isAdmin(userId, chatId) {
