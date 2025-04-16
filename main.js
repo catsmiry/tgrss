@@ -341,16 +341,18 @@ bot
     // すべてのメッセージを監視するハンドラー
     bot.on("message", (msg) => {
       console.log(
-        `メッセージを受信: ${msg.text} (ChatID: ${msg.chat.id}, UserID: ${
-          msg.from.id
-        }, ThreadID: ${msg.message_thread_id || "なし"})`
+        `メッセージを受信: ${msg.text || "テキストなし"} (ChatID: ${
+          msg.chat.id
+        }, UserID: ${msg.from?.id || "不明"}, ThreadID: ${
+          msg.message_thread_id || "なし"
+        }, ChatType: ${msg.chat.type || "不明"})`
       );
 
-      // コマンドの処理
+      // テキストがあり、コマンドの場合のみ処理
       const text = msg.text || "";
 
-      // 有効なコマンドかどうかをチェック
-      if (isValidCommand(text, botInfo)) {
+      // コマンド判定 - botInfoオブジェクトを渡す
+      if (text.startsWith("/") && isValidCommand(text, botInfo)) {
         processCommand(msg);
       }
     });
@@ -368,31 +370,33 @@ function isValidCommand(text, botInfo) {
   // テキストがない場合は無視
   if (!text) return false;
 
-  // 1. 正規のコマンド形式をチェック (/command または /command@botname)
+  // 1. コマンドの判定
   if (text.startsWith("/")) {
     // コマンド部分を取り出す (最初の空白までか全体)
     const commandPart = text.split(" ")[0];
 
-    // 基本コマンド (/add, /list, /remove など)
+    // 有効なコマンドリスト
     const validCommands = ["/add", "/remove", "/list"];
 
-    // @を含まないコマンドの場合、そのまま有効なコマンドリストと比較
+    // @を含まないコマンドの場合（プライベートチャットなど）
     if (!commandPart.includes("@")) {
+      // グループチャットでは@付きコマンドを要求
+      if (msg.chat.type === "group" || msg.chat.type === "supergroup") {
+        return false;
+      }
       return validCommands.includes(commandPart.toLowerCase());
     }
 
-    // @を含む場合は、前半部分がコマンドで、後半がボット名と一致するか確認
+    // @を含む場合（グループチャットでの指定）
     const [cmd, botName] = commandPart.split("@");
     if (!validCommands.includes(cmd.toLowerCase())) {
       return false;
     }
 
-    // ボット名部分が完全に一致する場合のみコマンドを有効とする
-    // 'miryrssbot'のハードコード参照を削除し、botInfo.usernameのみをチェック
-    return botName === botInfo.username;
+    // ボット名チェック - ユーザー名が完全に一致する場合のみコマンドを有効とする
+    return botInfo && botName === botInfo.username;
   }
 
-  // メンションの場合はfalse
   return false;
 }
 
