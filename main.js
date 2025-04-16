@@ -349,15 +349,8 @@ bot
       // コマンドの処理
       const text = msg.text || "";
 
-      // 3つのパターンでコマンドを処理:
-      // 1. スラッシュで始まるコマンド (/add など)
-      // 2. @botusername へのメンション
-      // 3. @miryrssbot というハードコードされた名前へのメンション
-      if (
-        text.startsWith("/") ||
-        (botInfo && text.includes(`@${botInfo.username}`)) ||
-        text.includes("@miryrssbot")
-      ) {
+      // 有効なコマンドかどうかをチェック
+      if (isValidCommand(text, botInfo)) {
         processCommand(msg);
       }
     });
@@ -369,6 +362,39 @@ bot
     console.error("ボット情報の取得に失敗しました:", error);
     process.exit(1); // 致命的なエラーなので終了
   });
+
+// 有効なコマンドかどうかをチェックする関数
+function isValidCommand(text, botInfo) {
+  // テキストがない場合は無視
+  if (!text) return false;
+
+  // 1. 正規のコマンド形式をチェック (/command または /command@botname)
+  if (text.startsWith("/")) {
+    // コマンド部分を取り出す (最初の空白までか全体)
+    const commandPart = text.split(" ")[0];
+
+    // 基本コマンド (/add, /list, /remove など)
+    const validCommands = ["/add", "/remove", "/list"];
+
+    // @を含まないコマンドの場合、そのまま有効なコマンドリストと比較
+    if (!commandPart.includes("@")) {
+      return validCommands.includes(commandPart.toLowerCase());
+    }
+
+    // @を含む場合は、前半部分がコマンドで、後半がボット名と一致するか確認
+    const [cmd, botName] = commandPart.split("@");
+    if (!validCommands.includes(cmd.toLowerCase())) {
+      return false;
+    }
+
+    // ボット名部分が完全に一致する場合のみコマンドを有効とする
+    // 'miryrssbot'のハードコード参照を削除し、botInfo.usernameのみをチェック
+    return botName === botInfo.username;
+  }
+
+  // メンションの場合はfalse
+  return false;
+}
 
 // 管理者チェック - チャンネルの管理者/モデレーターかどうかを確認
 async function isAdmin(userId, chatId) {
